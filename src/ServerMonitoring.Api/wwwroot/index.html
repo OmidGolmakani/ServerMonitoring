@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>پایش سرور</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!--REPORT_DATA-->
+  <style>
+    :root {
+      --bg: #071016;
+      --panel: rgba(12, 28, 36, 0.88);
+      --line: rgba(148, 206, 190, 0.16);
+      --text: #e8f6f1;
+      --muted: #8eaaa2;
+      --accent: #3ee0c5;
+      --accent-2: #7aa2ff;
+      --warn: #f5c16c;
+      --danger: #ff6b7a;
+      --good: #5ddeaf;
+      --shadow: 0 18px 50px rgba(0, 0, 0, 0.28);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body {
+      font-family: Vazirmatn, "Segoe UI", Tahoma, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(1000px 520px at 100% -10%, rgba(62, 224, 197, 0.16), transparent 55%),
+        radial-gradient(800px 480px at -10% 10%, rgba(122, 162, 255, 0.16), transparent 50%),
+        linear-gradient(180deg, #071016, #0b1720 40%, #08141c);
+    }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background-image: radial-gradient(rgba(176, 214, 204, 0.16) 1px, transparent 1px);
+      background-size: 22px 22px;
+      mask-image: linear-gradient(180deg, #000, transparent 88%);
+    }
+    .page { position: relative; max-width: 1240px; margin: 0 auto; padding: 28px 18px 56px; }
+    header { display: flex; justify-content: space-between; gap: 18px; align-items: flex-end; margin-bottom: 22px; }
+    h1 { margin: 0 0 6px; font-size: clamp(1.7rem, 3vw, 2.4rem); letter-spacing: -0.03em; }
+    .lede { margin: 0; color: var(--muted); max-width: 46rem; line-height: 1.8; }
+    .actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+    button, select {
+      font: inherit;
+      color: var(--text);
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      padding: 10px 14px;
+      cursor: pointer;
+    }
+    button.primary { background: linear-gradient(180deg, #49ebcf, #1fb89f); color: #04241e; border: 0; font-weight: 700; }
+    button:hover, select:hover { border-color: rgba(62, 224, 197, 0.45); }
+    .live { display: inline-flex; align-items: center; gap: 8px; color: var(--good); font-weight: 700; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--good); box-shadow: 0 0 0 0 rgba(93, 222, 175, 0.7); animation: pulse 1.8s infinite; }
+    @keyframes pulse { 70% { box-shadow: 0 0 0 8px transparent; } }
+    .banner { display: none; margin-bottom: 14px; padding: 12px 14px; border-radius: 14px; background: rgba(255, 107, 122, 0.12); border: 1px solid rgba(255, 107, 122, 0.35); }
+    .banner.show { display: block; }
+    .kpis, .insights, .charts, .split { display: grid; gap: 14px; }
+    .kpis { grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+    .insights { grid-template-columns: repeat(3, 1fr); margin-bottom: 14px; }
+    .charts, .split { grid-template-columns: 1.4fr 1fr; margin-bottom: 14px; }
+    .card { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 16px; box-shadow: var(--shadow); backdrop-filter: blur(10px); min-width: 0; }
+    .card h2 { margin: 0 0 12px; font-size: 1rem; }
+    .kpi-label { color: var(--muted); font-size: 0.86rem; }
+    .kpi-value { margin-top: 8px; font-size: clamp(1.4rem, 2vw, 1.9rem); font-weight: 800; font-variant-numeric: tabular-nums; }
+    .kpi-sub { margin-top: 6px; color: var(--muted); font-size: 0.82rem; line-height: 1.7; }
+    .insight strong { display: block; margin: 6px 0; font-size: 1.02rem; }
+    .insight span { color: var(--muted); line-height: 1.7; }
+    canvas { width: 100%; height: 260px; display: block; }
+    .legend { display: flex; flex-wrap: wrap; gap: 10px 14px; color: var(--muted); font-size: 0.82rem; margin-top: 8px; }
+    .swatch { width: 9px; height: 9px; border-radius: 99px; display: inline-block; margin-left: 6px; }
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 860px; font-size: 0.88rem; }
+    th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+    th { color: var(--muted); font-weight: 600; }
+    .path { direction: ltr; text-align: left; font-family: Consolas, "Cascadia Mono", monospace; }
+    .pill { border-radius: 999px; padding: 3px 8px; background: rgba(255,255,255,0.06); }
+    .bar { height: 7px; border-radius: 99px; background: rgba(255,255,255,0.08); overflow: hidden; min-width: 72px; }
+    .bar > span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-2), var(--accent)); }
+    .recent { display: grid; gap: 8px; }
+    .recent article { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); }
+    .recent article:last-child { border-bottom: 0; }
+    .meta { color: var(--muted); font-size: 0.8rem; }
+    .demos { display: flex; flex-wrap: wrap; gap: 8px; }
+    footer { margin-top: 18px; color: var(--muted); line-height: 1.8; font-size: 0.86rem; }
+    .empty { color: var(--muted); padding: 12px 0; }
+    html[data-mode="report"] .live-only { display: none; }
+    @media (max-width: 980px) {
+      .kpis, .insights, .charts, .split { grid-template-columns: 1fr; }
+      header { flex-direction: column; align-items: stretch; }
+      .actions { justify-content: stretch; }
+    }
+    @media (max-width: 640px) {
+      .kpis { grid-template-columns: 1fr; }
+      .page { padding-inline: 12px; }
+      .actions, .demos { display: grid; grid-template-columns: 1fr 1fr; }
+      button, select { width: 100%; }
+      .recent article { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+    @media print {
+      body { background: white; color: #14211c; }
+      body::before, .live-only, .actions { display: none !important; }
+      .card { box-shadow: none; background: white; }
+    }
+  </style>
+</head>
+<body>
+  <main class="page">
+    <header>
+      <div>
+        <div class="live live-only"><span class="dot"></span> زنده</div>
+        <h1>پایش سرور</h1>
+        <p class="lede">مصرف هر مسیر و خود برنامه روی همین فرآیند. زمان پاسخ دقیق است و سهم پردازنده و حافظه بین درخواست‌های هم‌زمان تقسیم می‌شود.</p>
+      </div>
+      <div class="actions">
+        <select id="window" class="live-only" aria-label="بازه گزارش">
+          <option value="15">۱۵ دقیقه</option>
+          <option value="60" selected>۶۰ دقیقه</option>
+          <option value="180">۳ ساعت</option>
+          <option value="1440">۲۴ ساعت</option>
+        </select>
+        <button id="refresh" class="live-only" type="button">تازه‌سازی</button>
+        <button id="pause" class="live-only" type="button">توقف</button>
+        <button id="report" class="primary live-only" type="button">گزارش HTML</button>
+        <button id="download" class="live-only" type="button">دانلود</button>
+      </div>
+    </header>
+    <div id="error" class="banner"></div>
+    <section class="kpis" id="kpis"></section>
+    <section class="insights" id="insights"></section>
+    <section class="charts">
+      <article class="card">
+        <h2>پردازنده فرآیند</h2>
+        <canvas id="cpuChart" aria-label="نمودار پردازنده"></canvas>
+      </article>
+      <article class="card">
+        <h2>حافظه</h2>
+        <canvas id="memoryChart" aria-label="نمودار حافظه"></canvas>
+        <div class="legend"><span><i class="swatch" style="background:#3ee0c5"></i>مجموعه کاری</span><span><i class="swatch" style="background:#7aa2ff"></i>هیپ مدیریت‌شده</span></div>
+      </article>
+    </section>
+    <section class="charts">
+      <article class="card">
+        <h2>سهم پردازنده مسیرها</h2>
+        <canvas id="routeCpuChart" aria-label="نمودار سهم مسیرها"></canvas>
+      </article>
+      <article class="card">
+        <h2>کندترین مسیرها</h2>
+        <canvas id="latencyChart" aria-label="نمودار تأخیر"></canvas>
+      </article>
+    </section>
+    <section class="split">
+      <article class="card">
+        <h2>نرخ درخواست</h2>
+        <canvas id="rateChart" aria-label="نمودار نرخ درخواست"></canvas>
+      </article>
+      <article class="card">
+        <h2>کدهای وضعیت</h2>
+        <canvas id="statusChart" aria-label="نمودار وضعیت"></canvas>
+        <div id="statusLegend" class="legend"></div>
+      </article>
+    </section>
+    <section class="card" style="margin-bottom:14px">
+      <h2>مسیرها</h2>
+      <div class="table-wrap"><table><thead><tr>
+        <th>روش</th><th>مسیر</th><th>تعداد</th><th>خطا</th><th>میانگین</th><th>صدک ۹۵</th><th>پردازنده</th><th>سهم</th><th>حافظه</th><th>پاسخ</th>
+      </tr></thead><tbody id="routes"></tbody></table></div>
+    </section>
+    <section class="split">
+      <article class="card">
+        <h2>آخرین درخواست‌ها</h2>
+        <div id="recent" class="recent"></div>
+      </article>
+      <article class="card live-only">
+        <h2>بار آزمایشی</h2>
+        <p class="kpi-sub">این دکمه‌ها مسیرهای همین برنامه را صدا می‌زنند تا نمودارها پر شوند. هر کنترلر جدیدی که اضافه کنید خودش در آمار می‌آید.</p>
+        <div class="demos">
+          <button type="button" data-demo="/api/demo/ping">سبک</button>
+          <button type="button" data-demo="/api/demo/compute?iterations=400000">محاسبه</button>
+          <button type="button" data-demo="/api/demo/allocate?megabytes=4">حافظه</button>
+          <button type="button" data-demo="/api/demo/delay?milliseconds=400">تأخیر</button>
+          <button type="button" data-demo="/api/demo/fail">خطا</button>
+        </div>
+      </article>
+    </section>
+    <footer id="foot"></footer>
+  </main>
+  <script>
+    const state = { data: null, timer: 0, paused: false, windowMinutes: 60 };
+    const fa = new Intl.NumberFormat("fa-IR", { maximumFractionDigits: 1 });
+    const faInt = new Intl.NumberFormat("fa-IR");
+
+    function formatBytes(bytes) {
+      const units = ["بایت", "کیلوبایت", "مگابایت", "گیگابایت"];
+      let value = Number(bytes) || 0;
+      let index = 0;
+      while (value >= 1024 && index < units.length - 1) { value /= 1024; index++; }
+      return fa.format(value) + " " + units[index];
+    }
+    function formatMs(ms) {
+      ms = Number(ms) || 0;
+      if (ms < 1000) return fa.format(ms) + " ms";
+      return fa.format(ms / 1000) + " ثانیه";
+    }
+    function formatTime(value) {
+      return new Date(value).toLocaleTimeString("fa-IR", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    }
+    function uptime(seconds) {
+      seconds = Math.max(0, Math.floor(seconds));
+      const hours = Math.floor(seconds / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      return faInt.format(hours) + " ساعت و " + faInt.format(minutes) + " دقیقه";
+    }
+    function showError(message) {
+      const banner = document.getElementById("error");
+      banner.textContent = message;
+      banner.classList.add("show");
+    }
+    function clearError() { document.getElementById("error").classList.remove("show"); }
+
+    function fit(canvas) {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+    function emptyChart(ctx, width, height) {
+      ctx.fillStyle = "#8eaaa2";
+      ctx.font = "14px Vazirmatn, Segoe UI, Tahoma";
+      ctx.textAlign = "center";
+      ctx.fillText("هنوز داده‌ای نیست", width / 2, height / 2);
+    }
+    function drawLine(canvas, labels, series) {
+      const { ctx, width, height } = fit(canvas);
+      ctx.clearRect(0, 0, width, height);
+      const values = series.flatMap(item => item.values);
+      if (!values.length) { emptyChart(ctx, width, height); return; }
+      const pad = { l: 58, r: 12, t: 16, b: 28 };
+      const plotW = width - pad.l - pad.r;
+      const plotH = height - pad.t - pad.b;
+      const max = Math.max(...values, 0);
+      const yMax = max <= 0 ? 1 : max * 1.12;
+      ctx.font = "12px Vazirmatn, Segoe UI, Tahoma";
+      ctx.textAlign = "right";
+      ctx.strokeStyle = "rgba(148,206,190,0.16)";
+      ctx.fillStyle = "#8eaaa2";
+      for (let i = 0; i <= 4; i++) {
+        const y = pad.t + (plotH * i) / 4;
+        ctx.beginPath(); ctx.moveTo(pad.l, y); ctx.lineTo(width - pad.r, y); ctx.stroke();
+        ctx.fillText(fa.format(yMax * (1 - i / 4)), pad.l - 8, y + 4);
+      }
+      series.forEach(item => {
+        ctx.beginPath();
+        item.values.forEach((value, index) => {
+          const x = pad.l + (item.values.length === 1 ? plotW / 2 : (plotW * index) / (item.values.length - 1));
+          const y = pad.t + plotH - (value / yMax) * plotH;
+          if (index === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.strokeStyle = item.color;
+        ctx.lineWidth = 2.2;
+        ctx.stroke();
+      });
+      ctx.fillStyle = "#8eaaa2";
+      ctx.textAlign = "left";
+      if (labels[0]) ctx.fillText(labels[0], pad.l, height - 8);
+      ctx.textAlign = "right";
+      if (labels.at(-1)) ctx.fillText(labels.at(-1), width - pad.r, height - 8);
+    }
+    function drawBars(canvas, rows, color) {
+      const { ctx, width, height } = fit(canvas);
+      ctx.clearRect(0, 0, width, height);
+      if (!rows.length) { emptyChart(ctx, width, height); return; }
+      const max = Math.max(...rows.map(row => row.value), 1);
+      const rowH = Math.min(36, (height - 12) / rows.length);
+      ctx.font = "12px Vazirmatn, Segoe UI, Tahoma";
+      ctx.textAlign = "left";
+      rows.forEach((row, index) => {
+        const y = 8 + index * rowH;
+        ctx.fillStyle = "#8eaaa2";
+        ctx.fillText(row.label, 8, y + 14);
+        const barX = 150;
+        const barW = Math.max(2, ((width - barX - 16) * row.value) / max);
+        ctx.fillStyle = "rgba(255,255,255,0.06)";
+        ctx.fillRect(barX, y + 4, width - barX - 16, 12);
+        ctx.fillStyle = color;
+        ctx.fillRect(barX, y + 4, barW, 12);
+      });
+    }
+    function drawDonut(canvas, slices) {
+      const { ctx, width, height } = fit(canvas);
+      ctx.clearRect(0, 0, width, height);
+      const total = slices.reduce((sum, slice) => sum + slice.count, 0);
+      if (!total) { emptyChart(ctx, width, height); return; }
+      const radius = Math.min(width, height) * 0.32;
+      const cx = width / 2;
+      const cy = height / 2;
+      let angle = -Math.PI / 2;
+      slices.forEach(slice => {
+        const sweep = (slice.count / total) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.fillStyle = slice.color;
+        ctx.arc(cx, cy, radius, angle, angle + sweep);
+        ctx.fill();
+        angle += sweep;
+      });
+      ctx.beginPath();
+      ctx.fillStyle = "#0c1c24";
+      ctx.arc(cx, cy, radius * 0.62, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#e8f6f1";
+      ctx.textAlign = "center";
+      ctx.font = "700 18px Vazirmatn, Segoe UI, Tahoma";
+      ctx.fillText(faInt.format(total), cx, cy + 6);
+    }
+
+    function render(data) {
+      const overview = data.overview;
+      const cards = [
+        ["پردازنده", fa.format(overview.cpuPercent) + "٪", overview.processorCount + " هسته · " + uptime(overview.uptimeSeconds)],
+        ["حافظه فرآیند", formatBytes(overview.workingSetBytes), "خصوصی " + formatBytes(overview.privateMemoryBytes) + " · فشار حافظه " + fa.format(overview.memoryLoadPercent) + "٪"],
+        ["حافظه مدیریت‌شده", formatBytes(overview.gcHeapBytes), "تکه‌تکه " + formatBytes(overview.fragmentedBytes) + " · GC " + overview.gen0Collections + "/" + overview.gen1Collections + "/" + overview.gen2Collections],
+        ["نرخ درخواست", fa.format(overview.requestsPerSecond) + " در ثانیه", "میانگین بازه " + fa.format(overview.windowRequestsPerSecond) + " · فعال " + faInt.format(overview.activeRequests)],
+        ["خطا", fa.format(overview.errorRatePercent) + "٪", faInt.format(overview.totalErrors) + " از " + faInt.format(overview.totalRequests)],
+        ["رشته‌ها", faInt.format(overview.threadCount), "مشغول استخر " + faInt.format(overview.busyWorkerThreads) + " · هندل " + faInt.format(overview.handleCount)]
+      ];
+      document.getElementById("kpis").innerHTML = cards.map(([label, value, sub]) =>
+        `<article class="card"><div class="kpi-label">${label}</div><div class="kpi-value">${value}</div><div class="kpi-sub">${sub}</div></article>`).join("");
+
+      const insights = data.highlights.length
+        ? data.highlights
+        : [{ title: "هنوز درخواستی نیست", value: "منتظر ترافیک", detail: "با دکمه‌های بار آزمایشی یا هر API همین برنامه شروع کنید." }];
+      document.getElementById("insights").innerHTML = insights.map(item =>
+        `<article class="card insight"><div class="kpi-label">${item.title}</div><strong>${item.value}</strong><span>${item.detail}</span></article>`).join("");
+
+      const labels = data.samples.map(sample => formatTime(sample.capturedAtUtc));
+      drawLine(document.getElementById("cpuChart"), labels, [{ color: "#3ee0c5", values: data.samples.map(sample => sample.cpuPercent) }]);
+      drawLine(document.getElementById("memoryChart"), labels, [
+        { color: "#3ee0c5", values: data.samples.map(sample => sample.workingSetBytes / 1048576) },
+        { color: "#7aa2ff", values: data.samples.map(sample => sample.gcHeapBytes / 1048576) }
+      ]);
+      drawLine(document.getElementById("rateChart"), labels, [{ color: "#f5c16c", values: data.samples.map(sample => sample.requestsPerSecond) }]);
+
+      const topCpu = [...data.routes].sort((a, b) => b.totalCpuMilliseconds - a.totalCpuMilliseconds).slice(0, 6);
+      drawBars(document.getElementById("routeCpuChart"), topCpu.map(route => ({ label: route.httpMethod + " " + route.route, value: route.totalCpuMilliseconds })), "#3ee0c5");
+      const slow = [...data.routes].sort((a, b) => b.p95ElapsedMilliseconds - a.p95ElapsedMilliseconds).slice(0, 6);
+      drawBars(document.getElementById("latencyChart"), slow.map(route => ({ label: route.httpMethod + " " + route.route, value: route.p95ElapsedMilliseconds })), "#f5c16c");
+
+      const slices = data.statusShares.map(share => ({
+        count: share.count,
+        color: share.statusCode >= 500 ? "#ff6b7a" : share.statusCode >= 400 ? "#f5c16c" : share.statusCode >= 300 ? "#7aa2ff" : "#3ee0c5",
+        label: share.statusCode
+      }));
+      drawDonut(document.getElementById("statusChart"), slices);
+      document.getElementById("statusLegend").innerHTML = slices.map(slice =>
+        `<span><i class="swatch" style="background:${slice.color}"></i>${slice.label} · ${faInt.format(slice.count)}</span>`).join("");
+
+      const routes = document.getElementById("routes");
+      routes.innerHTML = data.routes.length ? data.routes.map(route => `<tr>
+        <td><span class="pill">${route.httpMethod}</span></td>
+        <td class="path">${route.route}</td>
+        <td>${faInt.format(route.requestCount)}</td>
+        <td>${faInt.format(route.errorCount)}</td>
+        <td>${formatMs(route.averageElapsedMilliseconds)}</td>
+        <td>${formatMs(route.p95ElapsedMilliseconds)}</td>
+        <td>${formatMs(route.totalCpuMilliseconds)}</td>
+        <td><div class="bar"><span style="width:${Math.min(100, route.cpuSharePercent)}%"></span></div></td>
+        <td>${formatBytes(route.totalAllocatedBytes)}</td>
+        <td>${formatBytes(route.totalResponseBytes)}</td>
+      </tr>`).join("") : `<tr><td colspan="10" class="empty">مسیری ثبت نشده است.</td></tr>`;
+
+      const recent = document.getElementById("recent");
+      recent.innerHTML = data.recentRequests.length ? data.recentRequests.map(item => `<article>
+        <span class="pill">${item.statusCode}</span>
+        <div><div class="path">${item.httpMethod} ${item.route}</div><div class="meta">${formatMs(item.elapsedMilliseconds)} · پردازنده ${formatMs(item.cpuMilliseconds)} · ${formatBytes(item.allocatedBytes)}</div></div>
+        <div class="meta">${formatTime(item.occurredAtUtc)}</div>
+      </article>`).join("") : `<div class="empty">درخواستی در این بازه نیست.</div>`;
+
+      document.getElementById("foot").textContent =
+        `${overview.processName} · pid ${overview.processId} · ${overview.machineName} · ${overview.runtimeDescription} · پایگاه ${overview.databasePath}`;
+    }
+
+    async function load() {
+      try {
+        const response = await fetch(`/api/monitoring/dashboard?windowMinutes=${state.windowMinutes}`);
+        const body = await response.json();
+        if (!response.ok || !body.success) { showError(body.message || "دریافت گزارش ناموفق بود."); return; }
+        clearError();
+        state.data = body.data;
+        render(state.data);
+      } catch { showError("ارتباط با سرویس پایش قطع است."); }
+    }
+    function start() {
+      stop();
+      if (!state.paused) state.timer = window.setInterval(load, 3000);
+    }
+    function stop() { if (state.timer) window.clearInterval(state.timer); }
+
+    const embedded = window.__EMBEDDED_REPORT__;
+    if (embedded) {
+      document.documentElement.dataset.mode = "report";
+      render(embedded);
+    } else {
+      document.getElementById("window").addEventListener("change", event => {
+        state.windowMinutes = Number(event.target.value);
+        load();
+      });
+      document.getElementById("refresh").addEventListener("click", load);
+      document.getElementById("pause").addEventListener("click", event => {
+        state.paused = !state.paused;
+        event.target.textContent = state.paused ? "ادامه" : "توقف";
+        if (state.paused) stop(); else start();
+      });
+      document.getElementById("report").addEventListener("click", () => {
+        window.open(`/api/monitoring/report?windowMinutes=${state.windowMinutes}`, "_blank");
+      });
+      document.getElementById("download").addEventListener("click", () => {
+        window.location = `/api/monitoring/report?windowMinutes=${state.windowMinutes}&download=true`;
+      });
+      document.querySelectorAll("[data-demo]").forEach(button => {
+        button.addEventListener("click", async () => {
+          button.disabled = true;
+          await fetch(button.dataset.demo);
+          await load();
+          button.disabled = false;
+        });
+      });
+      window.addEventListener("resize", () => { if (state.data) render(state.data); });
+      document.addEventListener("visibilitychange", () => {
+        if (document.hidden) stop();
+        else if (!state.paused) start();
+      });
+      load();
+      start();
+    }
+  </script>
+</body>
+</html>

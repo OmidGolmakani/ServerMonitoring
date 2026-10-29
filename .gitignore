@@ -1,0 +1,7 @@
+bin/
+obj/
+.vs/
+*.user
+data/monitoring.json
+data/monitoring.json.tmp
+TestResults/
