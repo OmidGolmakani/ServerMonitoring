@@ -14,6 +14,12 @@ public sealed class RequestMetricsMiddleware(RequestDelegate next)
             return;
         }
 
+        if (IsSelfMonitoring(context.Request.Path))
+        {
+            await next(context);
+            return;
+        }
+
         var instrumentation = context.RequestServices.GetRequiredService<IRequestInstrumentation>();
         var monitoring = context.RequestServices.GetRequiredService<IMonitoringService>();
         var executionId = instrumentation.Begin();
@@ -43,4 +49,7 @@ public sealed class RequestMetricsMiddleware(RequestDelegate next)
             context.Response.Body = originalBody;
         }
     }
+
+    private static bool IsSelfMonitoring(PathString path) =>
+        path.StartsWithSegments("/api/monitoring", StringComparison.OrdinalIgnoreCase);
 }

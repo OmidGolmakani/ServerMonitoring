@@ -36,6 +36,8 @@ public class MonitoringApiFactory : WebApplicationFactory<Program>
         builder.UseSetting("Monitoring:DataDirectory", DataDirectory);
         builder.UseSetting("Monitoring:SampleIntervalMilliseconds", "400");
         builder.UseSetting("Monitoring:FlushIntervalMilliseconds", "60000");
+        builder.UseSetting("Monitoring:DomainProbeIntervalMilliseconds", "600000");
+        builder.UseSetting("Monitoring:DiscoverIisSites", "false");
     }
 
     protected override void Dispose(bool disposing)
@@ -80,6 +82,77 @@ public class MonitoringApiTests(MonitoringApiFactory factory) : IClassFixture<Mo
     }
 
     /// <summary>
+    /// سناریو: کاربر چند آدرس را برای پایش دامنه ذخیره می‌کند.
+    /// انتظار: کاتالوگ همان انتخاب را Selected نشان بدهد و فایل selected-domains.json ساخته شود.
+    /// </summary>
+    [Fact(DisplayName = "انتخاب دامنه‌های کشف‌شده ذخیره و خوانده می‌شود")]
+    public async Task Domain_catalog_selection_can_be_saved()
+    {
+        var payload = new SaveDomainSelectionRequestDto
+        {
+            SelectedUrls = ["https://alpha.example/", "https://beta.example/"]
+        };
+
+        var put = await _client.PutAsJsonAsync("/api/monitoring/domain-catalog", payload);
+        var putBody = await put.Content.ReadFromJsonAsync<BaseResponseDto<DomainCatalogDto>>(JsonOptions);
+        var get = await ReadAsync<DomainCatalogDto>("/api/monitoring/domain-catalog");
+
+        Assert.Equal(HttpStatusCode.OK, put.StatusCode);
+        Assert.NotNull(putBody);
+        Assert.True(putBody.Success);
+        Assert.Equal(2, get.SelectedCount);
+        Assert.True(File.Exists(Path.Combine(factory.DataDirectory, "selected-domains.json")));
+    }
+
+    /// <summary>
+    /// سناریو: یک نمونه سرور و چند بررسی دامنه در حافظه ثبت می‌شود.
+    /// انتظار: API سرور و دامنه‌ها آمار ماشین و وضعیت هر دامنه را برگرداند.
+    /// </summary>
+    [Fact(DisplayName = "پایش سرور و دامنه‌ها در داشبورد دیده می‌شود")]
+    public async Task Server_and_domains_appear_on_dashboard()
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var monitoring = scope.ServiceProvider.GetRequiredService<IMonitoringService>();
+        monitoring.RecordServerSample(new NewServerSampleDto
+        {
+            CapturedAtUtc = DateTime.UtcNow,
+            CpuPercent = 12.5,
+            TotalMemoryBytes = 16L * 1024 * 1024 * 1024,
+            AvailableMemoryBytes = 8L * 1024 * 1024 * 1024,
+            MemoryUsedPercent = 50,
+            TotalDiskBytes = 500L * 1024 * 1024 * 1024,
+            AvailableDiskBytes = 200L * 1024 * 1024 * 1024,
+            ProcessCount = 120,
+            Disks =
+            [
+                new DiskDto { Name = "C:\\", TotalBytes = 500L * 1024 * 1024 * 1024, AvailableBytes = 200L * 1024 * 1024 * 1024, UsedPercent = 60 }
+            ],
+            TopProcesses =
+            [
+                new ProcessUsageDto { ProcessName = "w3wp", ProcessId = 1000, CpuPercent = 4, WorkingSetBytes = 200_000_000 }
+            ]
+        });
+        monitoring.RecordDomainCheck(new NewDomainCheckDto
+        {
+            CheckedAtUtc = DateTime.UtcNow,
+            Name = "demo",
+            Url = "https://demo.example/",
+            IsUp = true,
+            StatusCode = 200,
+            ElapsedMilliseconds = 45
+        });
+
+        var catalog = scope.ServiceProvider.GetRequiredService<IDomainCatalog>();
+        Assert.Empty(catalog.GetTargets());
+
+        var dashboard = await ReadAsync<DashboardDto>("/api/monitoring/dashboard?windowMinutes=60");
+        Assert.Equal(12.5, dashboard.Server.CpuPercent);
+        Assert.Equal(120, dashboard.Server.ProcessCount);
+        Assert.Contains(dashboard.Server.TopProcesses, item => item.ProcessName == "w3wp");
+        Assert.NotEmpty(dashboard.ServerSamples);
+    }
+
+    /// <summary>
     /// سناریو: سه بار ping زده می‌شود.
     /// انتظار: شمارش همان مسیر دقیقاً سه تا زیاد شود و حجم پاسخ بزرگ‌تر از صفر باشد.
     /// </summary>
@@ -96,6 +169,28 @@ public class MonitoringApiTests(MonitoringApiFactory factory) : IClassFixture<Mo
         var route = Assert.Single(dashboard.Routes, item => item.HttpMethod == "GET" && item.Route == "/api/demo/ping");
         Assert.Equal(3, route.RequestCount - before);
         Assert.True(route.TotalResponseBytes > 0);
+    }
+
+    /// <summary>
+    /// سناریو: چند بار خودِ API پایش (dashboard و overview و report) صدا زده می‌شود.
+    /// انتظار: این مسیرها در آمار مسیرها ثبت نشوند تا polling داشبورد سهم CPU را نبلعد؛
+    /// در عین حال مسیرهای واقعی مثل ping همچنان دیده شوند.
+    /// </summary>
+    [Fact(DisplayName = "درخواست‌های خودِ پایش در متریک مسیر ثبت نمی‌شوند")]
+    public async Task Self_monitoring_requests_are_not_recorded_as_routes()
+    {
+        await _client.GetAsync("/api/demo/ping");
+        await _client.GetAsync("/api/monitoring/dashboard?windowMinutes=60");
+        await _client.GetAsync("/api/monitoring/overview?windowMinutes=60");
+        await _client.GetAsync("/api/monitoring/routes?windowMinutes=60");
+        await _client.GetAsync("/api/monitoring/samples?windowMinutes=60");
+        await _client.GetAsync("/api/monitoring/report?windowMinutes=60");
+
+        var dashboard = await ReadAsync<DashboardDto>("/api/monitoring/dashboard?windowMinutes=60");
+
+        Assert.DoesNotContain(dashboard.Routes, route => route.Route.StartsWith("/api/monitoring", StringComparison.OrdinalIgnoreCase));
+        Assert.Contains(dashboard.Routes, route => route.HttpMethod == "GET" && route.Route == "/api/demo/ping");
+        Assert.DoesNotContain(dashboard.RecentRequests, item => item.Route.StartsWith("/api/monitoring", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

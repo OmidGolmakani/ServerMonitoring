@@ -13,4 +13,10 @@ public sealed class DashboardDto
     public IReadOnlyList<RecentRequestDto> RecentRequests { get; init; } = [];
 
     public IReadOnlyList<MonitoringHighlightDto> Highlights { get; init; } = [];
+
+    public ServerOverviewDto Server { get; init; } = new();
+
+    public IReadOnlyList<ServerSampleDto> ServerSamples { get; init; } = [];
+
+    public IReadOnlyList<DomainStatusDto> Domains { get; init; } = [];
 }

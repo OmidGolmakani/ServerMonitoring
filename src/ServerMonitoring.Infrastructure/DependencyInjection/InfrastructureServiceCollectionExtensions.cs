@@ -16,14 +16,28 @@ public static class InfrastructureServiceCollectionExtensions
             .Bind(configuration.GetSection(MonitoringOptions.SectionName))
             .ValidateOnStart();
 
+        services.AddHttpClient("DomainProbe")
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = true,
+                ServerCertificateCustomValidationCallback = HttpClientHandler.DangerousAcceptAnyServerCertificateValidator
+            });
+
         services.AddSingleton<IMonitoringDatabase, JsonMonitoringDatabase>();
         services.AddSingleton<MonitoringStore>();
         services.AddSingleton<ProcessResourceMonitor>();
         services.AddSingleton<IRequestInstrumentation>(provider => provider.GetRequiredService<ProcessResourceMonitor>());
         services.AddSingleton<ISystemSampleProbe>(provider => provider.GetRequiredService<ProcessResourceMonitor>());
         services.AddSingleton<IHostProcessInfo, HostProcessInfo>();
+        services.AddSingleton<IServerMetricsProbe, WindowsServerMetricsProbe>();
+        services.AddSingleton<IDomainSelectionStore, JsonDomainSelectionStore>();
+        services.AddSingleton<IisRuntimeSiteDiscoverer>();
+        services.AddSingleton<IDomainCatalog, ConfiguredAndIisDomainCatalog>();
+        services.AddSingleton<IDomainHealthProbe, DomainHttpProbe>();
         services.AddScoped<IRequestTraceRepository, RequestTraceRepository>();
         services.AddScoped<ISystemSampleRepository, SystemSampleRepository>();
+        services.AddScoped<IServerSampleRepository, ServerSampleRepository>();
+        services.AddScoped<IDomainCheckRepository, DomainCheckRepository>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<IMetricPersistenceService, MetricPersistenceService>();
         services.AddHostedService<MonitoringCollectorHostedService>();

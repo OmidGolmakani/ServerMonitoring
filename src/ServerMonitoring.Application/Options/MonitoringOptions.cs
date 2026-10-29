@@ -27,4 +27,27 @@ public sealed class MonitoringOptions
     public int RecentRequestLimit { get; set; } = 40;
 
     public string DataDirectory { get; set; } = "data";
+
+    public int DomainProbeIntervalMilliseconds { get; set; } = 60_000;
+
+    public int DomainProbeTimeoutMilliseconds { get; set; } = 5_000;
+
+    public int DomainProbeMaxConcurrency { get; set; } = 5;
+
+    public int ServerSampleIntervalMilliseconds { get; set; } = 15_000;
+
+    public int LiveServerSampleCapacity { get; set; } = 5_000;
+
+    public int LiveDomainCheckCapacity { get; set; } = 20_000;
+
+    public int TopProcessLimit { get; set; } = 12;
+
+    public string[] ProcessNamesToSample { get; set; } = ["w3wp", "dotnet", "ServerMonitoring.Api"];
+
+    public bool DiscoverIisSites { get; set; } = true;
+
+    public string IisApplicationHostConfigPath { get; set; } =
+        @"%windir%\System32\inetsrv\config\applicationHost.config";
+
+    public List<DomainTargetOptions> Domains { get; set; } = [];
 }

@@ -6,5 +6,9 @@ public interface IUnitOfWork
 
     ISystemSampleRepository SystemSamples { get; }
 
+    IServerSampleRepository ServerSamples { get; }
+
+    IDomainCheckRepository DomainChecks { get; }
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

@@ -16,7 +16,8 @@ public sealed class MonitoringService(
     IRequestInstrumentation instrumentation,
     IHostProcessInfo hostProcessInfo,
     IHtmlReportRenderer reportRenderer,
-    IMonitoringDatabase monitoringDatabase) : IMonitoringService
+    IMonitoringDatabase monitoringDatabase,
+    IDomainCatalog domainCatalog) : IMonitoringService
 {
     private static readonly CultureInfo PersianCulture = CultureInfo.GetCultureInfo("fa-IR");
 
@@ -37,6 +38,12 @@ public sealed class MonitoringService(
         unitOfWork.SystemSamples.Stage(entity);
     }
 
+    public void RecordServerSample(NewServerSampleDto sample)
+        => unitOfWork.ServerSamples.Stage(mapper.Map<ServerSample>(sample));
+
+    public void RecordDomainCheck(NewDomainCheckDto check)
+        => unitOfWork.DomainChecks.Stage(mapper.Map<DomainCheck>(check));
+
     public async Task<MonitoringOverviewDto> GetOverviewAsync(int? windowMinutes, CancellationToken cancellationToken)
     {
         var dashboard = await BuildAsync(windowMinutes, cancellationToken);
@@ -53,6 +60,18 @@ public sealed class MonitoringService(
     {
         var dashboard = await BuildAsync(windowMinutes, cancellationToken);
         return dashboard.Samples;
+    }
+
+    public async Task<ServerOverviewDto> GetServerAsync(int? windowMinutes, CancellationToken cancellationToken)
+    {
+        var dashboard = await BuildAsync(windowMinutes, cancellationToken);
+        return dashboard.Server;
+    }
+
+    public async Task<IReadOnlyList<DomainStatusDto>> GetDomainsAsync(int? windowMinutes, CancellationToken cancellationToken)
+    {
+        var dashboard = await BuildAsync(windowMinutes, cancellationToken);
+        return dashboard.Domains;
     }
 
     public Task<DashboardDto> GetDashboardAsync(int? windowMinutes, CancellationToken cancellationToken)
@@ -73,9 +92,15 @@ public sealed class MonitoringService(
 
         var traces = await unitOfWork.RequestTraces.GetSinceAsync(fromUtc, cancellationToken);
         var samples = await unitOfWork.SystemSamples.GetSinceAsync(fromUtc, cancellationToken);
+        var serverSamples = await unitOfWork.ServerSamples.GetSinceAsync(fromUtc, cancellationToken);
+        var domainChecks = await unitOfWork.DomainChecks.GetSinceAsync(fromUtc, cancellationToken);
         var routes = RouteMetricCalculator.Calculate(traces, windowSeconds);
         var visibleSamples = SampleDownsampler.Downsample(samples, _options.DefaultSamplePoints);
+        var visibleServerSamples = SampleDownsampler.Downsample(serverSamples, _options.DefaultSamplePoints);
         var latest = samples.Count == 0 ? null : samples[^1];
+        var latestServer = serverSamples.Count == 0 ? null : serverSamples[^1];
+        var targets = domainCatalog.GetTargets();
+        var domains = DomainStatusCalculator.Calculate(targets, domainChecks);
         var recent = traces
             .OrderByDescending(trace => trace.OccurredAtUtc)
             .Take(_options.RecentRequestLimit)
@@ -124,6 +149,32 @@ public sealed class MonitoringService(
             DatabasePath = monitoringDatabase.FilePath
         };
 
+        var server = latestServer is null
+            ? new ServerOverviewDto
+            {
+                DomainCount = domains.Count,
+                DomainsUp = domains.Count(domain => domain.IsUp),
+                DomainsDown = domains.Count(domain => !domain.IsUp)
+            }
+            : new ServerOverviewDto
+            {
+                CpuPercent = latestServer.CpuPercent,
+                TotalMemoryBytes = latestServer.TotalMemoryBytes,
+                AvailableMemoryBytes = latestServer.AvailableMemoryBytes,
+                MemoryUsedPercent = latestServer.MemoryUsedPercent,
+                TotalDiskBytes = latestServer.TotalDiskBytes,
+                AvailableDiskBytes = latestServer.AvailableDiskBytes,
+                DiskUsedPercent = latestServer.TotalDiskBytes <= 0
+                    ? 0
+                    : Round((latestServer.TotalDiskBytes - latestServer.AvailableDiskBytes) * 100d / latestServer.TotalDiskBytes),
+                ProcessCount = latestServer.ProcessCount,
+                DomainCount = domains.Count,
+                DomainsUp = domains.Count(domain => domain.IsUp),
+                DomainsDown = domains.Count(domain => !domain.IsUp),
+                Disks = mapper.Map<List<DiskDto>>(latestServer.Disks),
+                TopProcesses = mapper.Map<List<ProcessUsageDto>>(latestServer.TopProcesses)
+            };
+
         return new DashboardDto
         {
             Overview = overview,
@@ -131,7 +182,10 @@ public sealed class MonitoringService(
             Samples = mapper.Map<List<SystemSampleDto>>(visibleSamples),
             StatusShares = RouteMetricCalculator.CalculateStatusShares(traces),
             RecentRequests = mapper.Map<List<RecentRequestDto>>(recent),
-            Highlights = BuildHighlights(routes)
+            Highlights = BuildHighlights(routes),
+            Server = server,
+            ServerSamples = mapper.Map<List<ServerSampleDto>>(visibleServerSamples),
+            Domains = domains
         };
     }
 

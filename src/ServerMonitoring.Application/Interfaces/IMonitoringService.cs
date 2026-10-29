@@ -16,5 +16,13 @@ public interface IMonitoringService
 
     Task<IReadOnlyList<SystemSampleDto>> GetSamplesAsync(int? windowMinutes, CancellationToken cancellationToken);
 
+    Task<ServerOverviewDto> GetServerAsync(int? windowMinutes, CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<DomainStatusDto>> GetDomainsAsync(int? windowMinutes, CancellationToken cancellationToken);
+
+    void RecordServerSample(NewServerSampleDto sample);
+
+    void RecordDomainCheck(NewDomainCheckDto check);
+
     Task<string> BuildHtmlReportAsync(int? windowMinutes, CancellationToken cancellationToken);
 }

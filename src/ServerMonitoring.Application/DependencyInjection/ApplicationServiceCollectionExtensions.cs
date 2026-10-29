@@ -16,6 +16,8 @@ public static class ApplicationServiceCollectionExtensions
         services.AddSingleton<IValidateOptions<MonitoringOptions>, MonitoringOptionsValidator>();
         services.AddScoped<IMonitoringService, MonitoringService>();
         services.AddScoped<ISystemMetricsCollector, SystemMetricsCollector>();
+        services.AddScoped<IServerMonitoringCollector, ServerMonitoringCollector>();
+        services.AddScoped<IDomainCatalogService, DomainCatalogService>();
         services.AddSingleton<IDemoWorkloadService, DemoWorkloadService>();
         return services;
     }

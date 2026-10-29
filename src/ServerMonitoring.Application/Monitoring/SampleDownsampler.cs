@@ -4,23 +4,22 @@ namespace ServerMonitoring.Application.Monitoring;
 
 public static class SampleDownsampler
 {
-    public static IReadOnlyList<T> Downsample<T>(IReadOnlyList<T> source, int maxPoints)
+    public static IReadOnlyList<T> Downsample<T>(IReadOnlyList<T> samples, int maxPoints)
     {
         if (maxPoints <= 0)
-            throw new ValidationException("تعداد نقاط نمودار نامعتبر است.");
+            throw new ValidationException("حداکثر نقاط نمونه باید بزرگ‌تر از صفر باشد.");
 
-        if (source.Count <= maxPoints)
-            return source;
+        if (samples.Count <= maxPoints)
+            return samples;
 
-        if (maxPoints == 1)
-            return [source[^1]];
-
-        var result = new List<T>(maxPoints);
-        var step = (source.Count - 1) / (double)(maxPoints - 1);
+        var result = new T[maxPoints];
+        var lastIndex = samples.Count - 1;
         for (var index = 0; index < maxPoints; index++)
         {
-            var sourceIndex = (int)Math.Round(index * step, MidpointRounding.AwayFromZero);
-            result.Add(source[Math.Clamp(sourceIndex, 0, source.Count - 1)]);
+            var sourceIndex = index == maxPoints - 1
+                ? lastIndex
+                : (int)Math.Round(index * (lastIndex / (double)(maxPoints - 1)), MidpointRounding.AwayFromZero);
+            result[index] = samples[sourceIndex];
         }
 
         return result;

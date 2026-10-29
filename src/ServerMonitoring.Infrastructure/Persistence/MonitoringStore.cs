@@ -11,6 +11,10 @@ public sealed class MonitoringStore(IOptions<MonitoringOptions> options)
     private readonly Queue<RequestTrace> _pendingRequests = new();
     private readonly Queue<SystemSample> _samples = new();
     private readonly Queue<SystemSample> _pendingSamples = new();
+    private readonly Queue<ServerSample> _serverSamples = new();
+    private readonly Queue<ServerSample> _pendingServerSamples = new();
+    private readonly Queue<DomainCheck> _domainChecks = new();
+    private readonly Queue<DomainCheck> _pendingDomainChecks = new();
     private readonly Lock _gate = new();
     private bool _dirty;
 
@@ -48,6 +52,36 @@ public sealed class MonitoringStore(IOptions<MonitoringOptions> options)
         }
     }
 
+    public void AddServerSample(ServerSample sample)
+    {
+        lock (_gate)
+        {
+            Enqueue(_serverSamples, sample, _options.LiveServerSampleCapacity);
+            if (_pendingServerSamples.Count >= _options.PendingCapacity)
+            {
+                DroppedObservations++;
+                return;
+            }
+
+            _pendingServerSamples.Enqueue(sample);
+        }
+    }
+
+    public void AddDomainCheck(DomainCheck check)
+    {
+        lock (_gate)
+        {
+            Enqueue(_domainChecks, check, _options.LiveDomainCheckCapacity);
+            if (_pendingDomainChecks.Count >= _options.PendingCapacity)
+            {
+                DroppedObservations++;
+                return;
+            }
+
+            _pendingDomainChecks.Enqueue(check);
+        }
+    }
+
     public IReadOnlyList<RequestTrace> QueryRequests(DateTime fromUtc)
     {
         lock (_gate)
@@ -60,28 +94,16 @@ public sealed class MonitoringStore(IOptions<MonitoringOptions> options)
             return _samples.Where(sample => sample.CapturedAtUtc >= fromUtc).ToArray();
     }
 
-    public IReadOnlyList<RequestTrace> PeekPendingRequests(int maxCount)
+    public IReadOnlyList<ServerSample> QueryServerSamples(DateTime fromUtc)
     {
         lock (_gate)
-            return _pendingRequests.Take(maxCount).ToArray();
+            return _serverSamples.Where(sample => sample.CapturedAtUtc >= fromUtc).ToArray();
     }
 
-    public IReadOnlyList<SystemSample> PeekPendingSamples(int maxCount)
+    public IReadOnlyList<DomainCheck> QueryDomainChecks(DateTime fromUtc)
     {
         lock (_gate)
-            return _pendingSamples.Take(maxCount).ToArray();
-    }
-
-    public void AcknowledgeRequests(int count)
-    {
-        lock (_gate)
-            Dequeue(_pendingRequests, count, "درخواست");
-    }
-
-    public void AcknowledgeSamples(int count)
-    {
-        lock (_gate)
-            Dequeue(_pendingSamples, count, "نمونه");
+            return _domainChecks.Where(check => check.CheckedAtUtc >= fromUtc).ToArray();
     }
 
     public bool HasPending
@@ -89,14 +111,24 @@ public sealed class MonitoringStore(IOptions<MonitoringOptions> options)
         get
         {
             lock (_gate)
-                return _dirty || _pendingRequests.Count > 0 || _pendingSamples.Count > 0;
+            {
+                return _dirty
+                    || _pendingRequests.Count > 0
+                    || _pendingSamples.Count > 0
+                    || _pendingServerSamples.Count > 0
+                    || _pendingDomainChecks.Count > 0;
+            }
         }
     }
 
-    public (IReadOnlyList<RequestTrace> Requests, IReadOnlyList<SystemSample> Samples) Capture()
+    public (
+        IReadOnlyList<RequestTrace> Requests,
+        IReadOnlyList<SystemSample> Samples,
+        IReadOnlyList<ServerSample> ServerSamples,
+        IReadOnlyList<DomainCheck> DomainChecks) Capture()
     {
         lock (_gate)
-            return (_requests.ToArray(), _samples.ToArray());
+            return (_requests.ToArray(), _samples.ToArray(), _serverSamples.ToArray(), _domainChecks.ToArray());
     }
 
     public void ClearPending()
@@ -105,6 +137,8 @@ public sealed class MonitoringStore(IOptions<MonitoringOptions> options)
         {
             _pendingRequests.Clear();
             _pendingSamples.Clear();
+            _pendingServerSamples.Clear();
+            _pendingDomainChecks.Clear();
             _dirty = false;
         }
     }
@@ -124,6 +158,24 @@ public sealed class MonitoringStore(IOptions<MonitoringOptions> options)
         {
             foreach (var sample in samples)
                 Enqueue(_samples, sample, _options.LiveSampleCapacity);
+        }
+    }
+
+    public void SeedServerSamples(IReadOnlyList<ServerSample> samples)
+    {
+        lock (_gate)
+        {
+            foreach (var sample in samples)
+                Enqueue(_serverSamples, sample, _options.LiveServerSampleCapacity);
+        }
+    }
+
+    public void SeedDomainChecks(IReadOnlyList<DomainCheck> checks)
+    {
+        lock (_gate)
+        {
+            foreach (var check in checks)
+                Enqueue(_domainChecks, check, _options.LiveDomainCheckCapacity);
         }
     }
 
@@ -151,19 +203,34 @@ public sealed class MonitoringStore(IOptions<MonitoringOptions> options)
         }
     }
 
+    public void TrimServerSamples(DateTime thresholdUtc)
+    {
+        lock (_gate)
+        {
+            var before = _serverSamples.Count + _pendingServerSamples.Count;
+            Trim(_serverSamples, thresholdUtc, static sample => sample.CapturedAtUtc);
+            Trim(_pendingServerSamples, thresholdUtc, static sample => sample.CapturedAtUtc);
+            if (_serverSamples.Count + _pendingServerSamples.Count != before)
+                _dirty = true;
+        }
+    }
+
+    public void TrimDomainChecks(DateTime thresholdUtc)
+    {
+        lock (_gate)
+        {
+            var before = _domainChecks.Count + _pendingDomainChecks.Count;
+            Trim(_domainChecks, thresholdUtc, static check => check.CheckedAtUtc);
+            Trim(_pendingDomainChecks, thresholdUtc, static check => check.CheckedAtUtc);
+            if (_domainChecks.Count + _pendingDomainChecks.Count != before)
+                _dirty = true;
+        }
+    }
+
     private static void Enqueue<T>(Queue<T> queue, T item, int capacity)
     {
         queue.Enqueue(item);
         while (queue.Count > capacity)
-            queue.Dequeue();
-    }
-
-    private static void Dequeue<T>(Queue<T> queue, int count, string name)
-    {
-        if (count > queue.Count)
-            throw new InvalidOperationException($"تعداد تایید صف {name} از موجودی صف بیشتر است.");
-
-        for (var index = 0; index < count; index++)
             queue.Dequeue();
     }
 

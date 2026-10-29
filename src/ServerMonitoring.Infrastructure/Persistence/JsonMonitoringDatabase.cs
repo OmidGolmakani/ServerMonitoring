@@ -41,15 +41,31 @@ public sealed class JsonMonitoringDatabase : IMonitoringDatabase
         return document.Samples ?? [];
     }
 
+    public async Task<IReadOnlyList<ServerSample>> ReadServerSamplesAsync(CancellationToken cancellationToken)
+    {
+        var document = await ReadAsync(cancellationToken);
+        return document.ServerSamples ?? [];
+    }
+
+    public async Task<IReadOnlyList<DomainCheck>> ReadDomainChecksAsync(CancellationToken cancellationToken)
+    {
+        var document = await ReadAsync(cancellationToken);
+        return document.DomainChecks ?? [];
+    }
+
     public async Task WriteAsync(
         IReadOnlyList<RequestTrace> requests,
         IReadOnlyList<SystemSample> samples,
+        IReadOnlyList<ServerSample> serverSamples,
+        IReadOnlyList<DomainCheck> domainChecks,
         CancellationToken cancellationToken)
     {
         var payload = Encoding.UTF8.GetBytes(Serialize(new MonitoringDocument
         {
             Requests = requests.ToList(),
-            Samples = samples.ToList()
+            Samples = samples.ToList(),
+            ServerSamples = serverSamples.ToList(),
+            DomainChecks = domainChecks.ToList()
         }));
 
         await using var stream = new FileStream(
@@ -80,5 +96,9 @@ public sealed class JsonMonitoringDatabase : IMonitoringDatabase
         public List<RequestTrace> Requests { get; set; } = [];
 
         public List<SystemSample> Samples { get; set; } = [];
+
+        public List<ServerSample> ServerSamples { get; set; } = [];
+
+        public List<DomainCheck> DomainChecks { get; set; } = [];
     }
 }
